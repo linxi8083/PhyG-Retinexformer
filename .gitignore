@@ -1,0 +1,24 @@
+# Datasets
+data/
+datasets/
+
+# Weights and experiment outputs
+*.pth
+*.pt
+*.ckpt
+pretrained_weights/
+weights/
+experiments/
+results/
+runs/
+wandb/
+
+# Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+.vscode/
+.idea/
+
+# Logs
+*.log
