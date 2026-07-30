@@ -1,6 +1,6 @@
 # Datasets
-data/
-datasets/
+/data/
+/datasets/
 
 # Weights and experiment outputs
 *.pth
@@ -12,6 +12,9 @@ experiments/
 results/
 runs/
 wandb/
+/tb_logger/
+/outputs/
+*.state
 
 # Cache
 __pycache__/
