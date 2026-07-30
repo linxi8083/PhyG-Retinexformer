@@ -1,0 +1,6 @@
+base: base_seed1234.yml
+experiment: retinexformer_physical_exposure_color_seed1234
+replay:
+  type: physical
+  physical:
+    mode: exposure_color

@@ -1,0 +1,4 @@
+base: base_seed1234.yml
+experiment: retinexformer_gamma_replay_seed1234
+replay:
+  type: gamma

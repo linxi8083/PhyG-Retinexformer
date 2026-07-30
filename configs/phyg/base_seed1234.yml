@@ -1,0 +1,58 @@
+protocol: retinexformer_phyg_crossbackbone_v1
+seed: 1234
+official_test_participation: NONE
+data_root: datasets/LOLv2/Synthetic/Train
+split_manifest: configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.txt
+split_raw_sha256: f80b8d5cebd3b8f6529b0670e91037320bf939dba6f16d8a5402861465f543d6
+split_canonical_sha256: e3e73abce5405d7fa4cbb7d1f16470dc924abf97c77208ba049da1613d0a944d
+initialization: pretrained_weights/LOL_v2_synthetic.pth
+initialization_load: strict_model_only
+network:
+  type: RetinexFormer
+  in_channels: 3
+  out_channels: 3
+  n_feat: 40
+  stage: 1
+  num_blocks: [1, 2, 2]
+batch_size: 8
+crop_size: 128
+epochs: 60
+steps_per_epoch: 101
+total_steps: 6060
+drop_last: true
+num_workers: 0
+optimizer:
+  type: Adam
+  lr: 1.0e-5
+  betas: [0.9, 0.999]
+scheduler:
+  type: CosineAnnealingLR
+  T_max: 6060
+  eta_min: 1.0e-7
+loss:
+  type: L1Loss
+  loss_weight: 1.0
+  reduction: mean
+gradient_clip:
+  enabled: true
+  max_norm: 0.01
+mixup:
+  enabled: true
+  beta: 1.2
+  use_identity: true
+validation:
+  interval_epochs: 10
+  quantization: 8bit_rgb
+  metrics: [PSNR, SSIM_11x11_sigma1.5_RGB, LPIPS_AlexNet]
+  gt_mean_correction: false
+  best_rule: max_PSNR_then_max_SSIM_then_min_LPIPS
+amp: false
+replay:
+  type: identity
+  rng_offset: 0
+  gamma:
+    start_percent: 60
+    end_percent: 120
+  physical:
+    mode: full
+    identity_probability: 0.5
