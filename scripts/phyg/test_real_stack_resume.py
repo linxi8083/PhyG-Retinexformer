@@ -17,7 +17,12 @@ sys.path.insert(0, str(ROOT))
 
 from basicsr.models.archs import define_network
 from basicsr.models.losses.losses import L1Loss
-from phyg.checkpoint import restore_checkpoint, save_checkpoint
+from phyg.checkpoint import (
+    cpu_byte_rng_state,
+    restore_checkpoint,
+    save_checkpoint,
+    trusted_torch_load,
+)
 from phyg.initialization import load_strict_model_only
 from phyg.provenance import git_commit, load_config, sha256_file
 from scripts.phyg.train import (
@@ -155,6 +160,48 @@ def nested_equal(left, right):
     return left == right
 
 
+def assert_restored_rng(context, loaded_state, device):
+    if device.type == "cuda":
+        if loaded_state["torch_cpu_rng"].device.type != "cuda":
+            raise AssertionError("checkpoint was not loaded with map_location=cuda")
+        for cuda_state in loaded_state["torch_cuda_rng"]:
+            if cuda_state.device.type != "cuda":
+                raise AssertionError("CUDA RNG state was not mapped to CUDA")
+    if not torch.equal(
+        torch.get_rng_state(),
+        cpu_byte_rng_state(loaded_state["torch_cpu_rng"]),
+    ):
+        raise AssertionError("CPU RNG restore differs")
+    current_cuda = torch.cuda.get_rng_state_all() if device.type == "cuda" else []
+    expected_cuda = [
+        cpu_byte_rng_state(item) for item in loaded_state["torch_cuda_rng"]
+    ]
+    if not nested_equal(current_cuda, expected_cuda):
+        raise AssertionError("CUDA RNG restore differs")
+    if not torch.equal(
+        context["loader_generator"].get_state(),
+        cpu_byte_rng_state(loaded_state["dataloader_generator"]),
+    ):
+        raise AssertionError("DataLoader order generator restore differs")
+    if not torch.equal(
+        context["iteration_generator"].get_state(),
+        cpu_byte_rng_state(
+            loaded_state["dataloader_iteration_generator"]
+        ),
+    ):
+        raise AssertionError("DataLoader iteration generator restore differs")
+    if context["replay"] is not None and hasattr(
+        context["replay"], "noise_generator"
+    ):
+        expected_noise = cpu_byte_rng_state(
+            loaded_state["replay_rng"]["noise_generator"]
+        )
+        if not torch.equal(
+            context["replay"].noise_generator.get_state(), expected_noise
+        ):
+            raise AssertionError("Physical noise generator restore differs")
+
+
 def check_mode(config_path, total_steps, interrupt_step, device):
     config = load_config(config_path)
     dataset, _, split_raw, split_canonical = build_development(config)
@@ -169,7 +216,9 @@ def check_mode(config_path, total_steps, interrupt_step, device):
         checkpoint = Path(temporary) / "mid_epoch.pth"
         save_checkpoint(checkpoint, interrupted)
         resumed = make_context(config, split_raw, split_canonical, device)
+        loaded_state = trusted_torch_load(checkpoint, device)
         restore_checkpoint(checkpoint, resumed, device)
+        assert_restored_rng(resumed, loaded_state, device)
         suffix = train_steps(
             resumed, dataset, total_steps - interrupt_step, device
         )

@@ -480,3 +480,62 @@ formal_training_started=NO
 cuda_exact_resume_on_target_4090=PENDING
 benchmark_on_target_4090=PENDING
 ```
+
+## 10. 2026-07-31 CUDA checkpoint RNG state 兼容修复
+
+问题：对完整 checkpoint 使用 `map_location="cuda"` 时，checkpoint 内原本属于 CPU
+generator 的 RNG tensors 也会被映射到 CUDA。直接调用
+`torch.set_rng_state(cuda_tensor)` 会报告：
+
+```text
+TypeError: RNG state must be a torch.ByteTensor
+```
+
+修复严格限制在 RNG state，不改变完整 checkpoint 的加载位置：
+
+- `torch_cpu_rng` 在恢复前显式转为 contiguous CPU `torch.uint8`；
+- `torch_cuda_rng` 的每个 state 在传给 `torch.cuda.set_rng_state_all` 前做相同转换；
+- DataLoader epoch-order generator state 做相同转换；
+- DataLoader iterator generator state 做相同转换；
+- Physical `noise_generator` state 在
+  `PhysicalBatchAugmenter.load_state_dict` 内做相同转换。
+
+model、optimizer、scheduler 和其他 tensor 仍按调用者的 `map_location` 加载到训练 GPU；
+没有把整个 checkpoint 改成 CPU 加载。
+
+`phyg/physical_degradation.py` 仅在 `load_state_dict` 增加 RNG tensor 的
+device/dtype normalization，退化采样、参数、公式和 forward 数值路径均未改变。更新后的
+仓库固定 SHA-256：
+
+```text
+e68b90cd55f94b99089da580c7076313c2348e08f1034314b55c06c203d32c13
+```
+
+测试增强：
+
+- `test_resume_equivalence.py` 明确断言两个 DataLoader generator state；
+- `test_real_stack_resume.py` 使用 `map_location=device` 加载完整 checkpoint；
+- CUDA 模式断言 checkpoint RNG tensors 确实先被映射到 CUDA；
+- 随后断言 CPU RNG、每卡 CUDA RNG、两个 DataLoader generator 和 Physical noise
+  generator 均恢复为预期 CPU ByteTensor state；
+- Gamma 与 Physical Full 都比较连续 4 step 和 2 step + restore + 2 step；
+- 继续比较 model、optimizer、scheduler、global_step 和下一批退化参数。
+
+目标 4090 CUDA 测试命令：
+
+```text
+python scripts/phyg/test_real_stack_resume.py --steps 4 --interrupt-step 2
+```
+
+本机使用同一真实网络、实际 Development Train 和完整 checkpoint 的 CPU 回归结果：
+
+```text
+Gamma: continuous 4 steps == 2 steps + restore + 2 steps: PASS
+Physical Full: continuous 4 steps == 2 steps + restore + 2 steps: PASS
+model/optimizer/scheduler/global_step/next degradation: bitwise identical
+```
+
+CUDA `map_location=cuda` 专属断言已经实现，但因本机 `sm_120` 不受 PyTorch 2.6
+支持，仍需在目标 RTX 4090 执行后确认 CUDA RNG restore PASS。
+
+本修复阶段不运行 benchmark、不启动正式训练、不访问官方 Test/Eval。

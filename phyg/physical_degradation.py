@@ -144,5 +144,11 @@ class PhysicalBatchAugmenter:
 
     def load_state_dict(self, state):
         self.parameter_rng.setstate(state["parameter_rng"])
-        self.noise_generator.set_state(state["noise_generator"])
+        noise_state = state["noise_generator"]
+        if not isinstance(noise_state, torch.Tensor):
+            noise_state = torch.as_tensor(noise_state)
+        noise_state = noise_state.detach().to(
+            device="cpu", dtype=torch.uint8
+        ).contiguous()
+        self.noise_generator.set_state(noise_state)
         self.counts = dict(state["counts"])

@@ -21,6 +21,13 @@ REQUIRED_FIELDS = {
 }
 
 
+def cpu_byte_rng_state(state):
+    """Normalize an RNG state loaded on any device to CPU ByteTensor."""
+    if not isinstance(state, torch.Tensor):
+        state = torch.as_tensor(state)
+    return state.detach().to(device="cpu", dtype=torch.uint8).contiguous()
+
+
 def capture_global_rng():
     return {
         "python_rng": random.getstate(),
@@ -35,9 +42,12 @@ def capture_global_rng():
 def restore_global_rng(state):
     random.setstate(state["python_rng"])
     np.random.set_state(state["numpy_rng"])
-    torch.set_rng_state(state["torch_cpu_rng"])
+    torch.set_rng_state(cpu_byte_rng_state(state["torch_cpu_rng"]))
     if state["torch_cuda_rng"] and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(state["torch_cuda_rng"])
+        torch.cuda.set_rng_state_all([
+            cpu_byte_rng_state(cuda_state)
+            for cuda_state in state["torch_cuda_rng"]
+        ])
 
 
 def build_checkpoint(context):
@@ -119,9 +129,11 @@ def restore_checkpoint(path, context, map_location="cpu"):
     if context.get("amp_scaler") is not None and state["amp_scaler"] is not None:
         context["amp_scaler"].load_state_dict(state["amp_scaler"])
     restore_global_rng(state)
-    context["loader_generator"].set_state(state["dataloader_generator"])
+    context["loader_generator"].set_state(
+        cpu_byte_rng_state(state["dataloader_generator"])
+    )
     context["iteration_generator"].set_state(
-        state["dataloader_iteration_generator"]
+        cpu_byte_rng_state(state["dataloader_iteration_generator"])
     )
     if context.get("replay") is not None:
         context["replay"].load_state_dict(state["replay_rng"])

@@ -12,7 +12,12 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from phyg.checkpoint import REQUIRED_FIELDS, build_checkpoint, restore_checkpoint
+from phyg.checkpoint import (
+    REQUIRED_FIELDS,
+    build_checkpoint,
+    cpu_byte_rng_state,
+    restore_checkpoint,
+)
 from phyg.gamma_replay import GammaReplay
 from phyg.provenance import config_sha256
 
@@ -101,6 +106,16 @@ def main():
         ):
             resumed[key] = interrupted[key]
         restore_checkpoint(path, resumed, "cpu")
+        if not torch.equal(
+            resumed["loader_generator"].get_state(),
+            cpu_byte_rng_state(state["dataloader_generator"]),
+        ):
+            raise AssertionError("DataLoader order generator RNG differs")
+        if not torch.equal(
+            resumed["iteration_generator"].get_state(),
+            cpu_byte_rng_state(state["dataloader_iteration_generator"]),
+        ):
+            raise AssertionError("DataLoader iteration generator RNG differs")
         suffix = run(resumed, 3)
     combined = prefix + suffix
     for expected, actual in zip(continuous_trace, combined):
