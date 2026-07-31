@@ -5,6 +5,7 @@ import argparse
 import json
 import random
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,12 @@ from phyg.development_dataset import (
     load_frozen_manifest,
 )
 from phyg.gamma_replay import GammaReplay
+from phyg.experiment_logging import (
+    ExperimentLogger,
+    make_summary,
+    print_epoch_row,
+    replay_statistics,
+)
 from phyg.initialization import load_strict_model_only
 from phyg.metrics import AuthorValidationMetrics
 from phyg.physical_degradation import PhysicalBatchAugmenter
@@ -199,11 +206,14 @@ def main():
         "git_commit": git_commit(ROOT), "epoch": 1, "batch_in_epoch": 0,
         "global_step": 0, "epoch_order": None, "best_metric": None,
         "best_epoch": None, "best_step": None,
+        "epoch_loss_sum": 0.0, "epoch_loss_count": 0,
+        "epoch_elapsed_seconds": 0.0,
     }
     if args.resume:
         restore_checkpoint(args.resume, context, device)
     output_dir = Path(args.output_root) / config["experiment"]
     output_dir.mkdir(parents=True, exist_ok=True)
+    experiment_logger = ExperimentLogger(output_dir)
     (output_dir / "run_metadata.json").write_text(json.dumps({
         "config": config,
         "config_sha256": context["config_sha256"],
@@ -215,6 +225,7 @@ def main():
     }, indent=2), encoding="utf-8")
     metrics = AuthorValidationMetrics(device)
     while context["global_step"] < config["total_steps"]:
+        epoch_segment_started = time.monotonic()
         if context["epoch_order"] is None:
             context["epoch_order"] = torch.randperm(
                 len(train_set), generator=loader_generator
@@ -247,8 +258,16 @@ def main():
             scheduler.step()
             context["batch_in_epoch"] += 1
             context["global_step"] += 1
+            context["epoch_loss_sum"] += float(loss.detach())
+            context["epoch_loss_count"] += 1
             if context["global_step"] % 100 == 0:
+                now = time.monotonic()
+                context["epoch_elapsed_seconds"] += now - epoch_segment_started
+                epoch_segment_started = now
                 save_checkpoint(output_dir / "latest.pth", context)
+        context["epoch_elapsed_seconds"] += (
+            time.monotonic() - epoch_segment_started
+        )
         completed_epoch = context["epoch"]
         context["epoch"] += 1
         context["batch_in_epoch"] = 0
@@ -261,6 +280,33 @@ def main():
                 context["best_epoch"] = completed_epoch
                 context["best_step"] = context["global_step"]
                 is_best = True
+        record = {
+            "epoch": completed_epoch,
+            "global_step": context["global_step"],
+            "mean_train_loss": (
+                context["epoch_loss_sum"] / context["epoch_loss_count"]
+            ),
+            "learning_rate": optimizer.param_groups[0]["lr"],
+            "elapsed_seconds": context["epoch_elapsed_seconds"],
+            **replay_statistics(
+                config["replay"]["type"], replay, context["global_step"]
+            ),
+        }
+        if completed_epoch % config["validation"]["interval_epochs"] == 0:
+            record.update(values)
+            record.update({
+                "is_best": is_best,
+                "best_epoch": context["best_epoch"],
+                "best_step": context["best_step"],
+            })
+        experiment_logger.append_epoch(record)
+        experiment_logger.update_summary(make_summary(
+            context, context["global_step"] >= config["total_steps"]
+        ))
+        print_epoch_row(record)
+        context["epoch_loss_sum"] = 0.0
+        context["epoch_loss_count"] = 0
+        context["epoch_elapsed_seconds"] = 0.0
         save_checkpoint(output_dir / "latest.pth", context)
         if completed_epoch % 10 == 0:
             save_checkpoint(output_dir / f"epoch_{completed_epoch}.pth", context)

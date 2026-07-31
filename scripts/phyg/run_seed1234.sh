@@ -9,6 +9,7 @@ python scripts/phyg/verify_budget_and_init.py
 python scripts/phyg/verify_official_initialization.py --device cpu
 python scripts/phyg/test_dataloader_rng_isolation.py
 python scripts/phyg/test_resume_equivalence.py
+python scripts/phyg/test_experiment_logging.py
 python scripts/phyg/test_real_stack_resume.py
 python scripts/phyg/benchmark_100_steps.py
 

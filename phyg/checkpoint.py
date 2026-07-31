@@ -18,6 +18,7 @@ REQUIRED_FIELDS = {
     "split_raw_sha256", "split_canonical_sha256",
     "initialization_checkpoint_sha256", "git_commit", "best_metric",
     "best_epoch", "best_step", "official_test_participation",
+    "epoch_loss_sum", "epoch_loss_count", "epoch_elapsed_seconds",
 }
 
 
@@ -89,6 +90,9 @@ def build_checkpoint(context):
         "best_metric": context.get("best_metric"),
         "best_epoch": context.get("best_epoch"),
         "best_step": context.get("best_step"),
+        "epoch_loss_sum": context.get("epoch_loss_sum", 0.0),
+        "epoch_loss_count": context.get("epoch_loss_count", 0),
+        "epoch_elapsed_seconds": context.get("epoch_elapsed_seconds", 0.0),
         "official_test_participation": "NONE",
     }
     missing = REQUIRED_FIELDS - state.keys()
@@ -140,6 +144,7 @@ def restore_checkpoint(path, context, map_location="cpu"):
     for key in (
         "epoch", "batch_in_epoch", "global_step", "epoch_order",
         "best_metric", "best_epoch", "best_step",
+        "epoch_loss_sum", "epoch_loss_count", "epoch_elapsed_seconds",
     ):
         context[key] = state[key]
     return state
