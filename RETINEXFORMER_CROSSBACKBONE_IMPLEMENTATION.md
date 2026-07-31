@@ -539,3 +539,16 @@ CUDA `map_location=cuda` 专属断言已经实现，但因本机 `sm_120` 不受
 支持，仍需在目标 RTX 4090 执行后确认 CUDA RNG restore PASS。
 
 本修复阶段不运行 benchmark、不启动正式训练、不访问官方 Test/Eval。
+
+### 10.1 cuBLAS 确定性前置条件
+
+目标 4090 首次执行真实栈测试时，cuBLAS GEMM 在
+`torch.use_deterministic_algorithms(True)` 下要求进程启动前设置 workspace：
+
+```text
+CUBLAS_WORKSPACE_CONFIG=:4096:8
+```
+
+`test_real_stack_resume.py` 现已在导入 PyTorch 前使用 `os.environ.setdefault` 设置该值；
+`run_seed1234.sh` 也在启动任何 Python 进程前显式 `export`。这只影响确定性测试的
+cuBLAS workspace，不修改网络、优化器、退化协议或正式训练配置。

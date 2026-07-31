@@ -3,11 +3,15 @@
 
 import argparse
 import json
+import os
 import random
 import sys
 import tempfile
 from copy import deepcopy
 from pathlib import Path
+
+# Must be set before importing/initializing CUDA so deterministic cuBLAS GEMM works.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import numpy as np
 import torch

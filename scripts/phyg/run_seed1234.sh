@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+
 python scripts/phyg/preflight_static.py
 python scripts/phyg/preflight.py
 python scripts/phyg/verify_budget_and_init.py
