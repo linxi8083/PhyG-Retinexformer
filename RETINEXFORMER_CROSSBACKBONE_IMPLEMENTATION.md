@@ -338,3 +338,145 @@ official_weight_loaded=NO
 dataset_images_read=NO
 formal_training_started=NO
 ```
+
+## 9. 2026-07-31 可移植预检、真实栈恢复与 benchmark 增补
+
+### 9.1 仓库自包含 SHA 校验
+
+`preflight.py` 和 `preflight_static.py` 已去除
+`C:/Users/hxy/Desktop/PhyG-PEFT` 硬编码。两者只读取仓库内
+`configs/phyg/protocols/source_sha256.txt`，校验：
+
+```text
+phyg/physical_degradation.py
+phyg/development_dataset.py
+phyg/metrics.py
+configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.txt
+```
+
+清单固定四个 SHA-256，文件缺失或内容变化均立即失败。`/data/` 与 `/datasets/`
+继续被 `.gitignore` 忽略；权重、checkpoint、日志和 `/outputs/` 忽略规则保持。
+
+### 9.2 官方初始化验证
+
+文件：
+
+```text
+pretrained_weights/LOL_v2_synthetic.pth
+```
+
+本机检查结果：
+
+```text
+exists=true
+SHA-256=2f793853c6b1ba0b4a3ff12b7b10f0f2c851eaefda1006437eb3f35229838c4a
+top-level keys={'params'}
+parameter_tensors=122
+parameter_values=1605701
+strict=True
+renamed=false
+dropped=false
+repaired=false
+```
+
+`phyg/initialization.py` 在加载前验证文件 SHA，要求顶层严格为
+`{'params': state_dict}`，逐项比较 key、shape 和 dtype，最后调用
+`model.load_state_dict(state, strict=True)`。不包含自动丢弃、添加 `module.`、重命名、
+shape 修补或 fallback 分支。
+
+### 9.3 DataLoader RNG 修复
+
+PyTorch 在 `iter(DataLoader)` 时会生成 base seed；未提供 generator 会额外消耗全局
+Torch RNG。新增 `isolated_loader_iterator`：
+
+1. 使用独立 `iteration_generator`；
+2. 在创建 iterator 前保存 generator state；
+3. 创建 iterator 后立即恢复该 state；
+4. checkpoint 独立保存/恢复 epoch-order generator 和 iterator generator。
+
+`test_dataloader_rng_isolation.py` 验证重建 iterator 前后全局 Torch RNG 与独立
+generator 均逐字相等，且 sample order 不变。
+
+### 9.4 真实训练栈断点等价测试
+
+新增 `scripts/phyg/test_real_stack_resume.py`，覆盖：
+
+- 真实 `RetinexFormer`；
+- 官方 strict initialization；
+- 实际 Development Train 810；
+- 128 crop、flip、shared Mixup；
+- Gamma Replay 与 Physical Full；
+- Adam、L1、clip=0.01、step-level cosine scheduler；
+- epoch 中途完整 checkpoint；
+- model、optimizer、scheduler、global_step；
+- 下一批文件名、crop/flip/Mixup 后 tensor 和下一批 Gamma/Physical 参数。
+
+本机 CPU 补充执行结果：
+
+```text
+Gamma: continuous 2 steps == 1 step + restore + 1 step: PASS
+Physical Full: continuous 2 steps == 1 step + restore + 1 step: PASS
+next Gamma=0.67: identical
+next Physical per-sample parameter list: identical
+official_test_participation=NONE
+```
+
+CUDA 执行尝试使用 PyTorch `2.6.0+cu124`，但本机 GPU 是 RTX 5060 Laptop、
+compute capability `sm_120`；PyTorch 2.6 wheel 只包含至 `sm_90`，在
+`model.to("cuda")` 时失败：
+
+```text
+RuntimeError: CUDA error: no kernel image is available for execution on the device
+```
+
+这是本机 GPU/PyTorch 2.6 架构不兼容，不是 OOM、NaN、数据或 checkpoint 失败。
+目标 Ubuntu RTX 4090 为 `sm_89`，在 PyTorch 2.6 支持范围内。CUDA exact-resume
+仍必须在目标 4090 服务器执行后才可标记 PASS。
+
+### 9.5 100-step benchmark
+
+新增 `scripts/phyg/benchmark_100_steps.py`。它依次从同一官方权重初始化并运行：
+
+```text
+Identity 100 steps
+Gamma Replay 100 steps
+Physical Full 100 steps
+```
+
+输出每臂：
+
+- completed steps；
+- peak CUDA memory bytes/GiB；
+- average synchronized step seconds；
+- mean/final loss；
+- NaN/OOM；
+- initialization SHA。
+
+并以：
+
+```text
+(Identity + Gamma + 4 × Physical Full) × 6060 steps
+```
+
+估算六组 60-epoch 训练步耗时，明确不包含每组六次 Development Validation。
+结果写入 ignored 的 `outputs/phyg_benchmark_seed1234.json`。
+
+由于上述 `sm_120`/PyTorch 2.6 阻断，本机未产生伪造或跨版本 benchmark 数字。
+benchmark 必须在目标 4090 服务器运行。
+
+`scripts/phyg/run_seed1234.sh` 现在只串联全部 preflight、权重 strict check、
+RNG test、tiny resume、真实栈 CUDA resume 和三臂 benchmark；不会调用
+`scripts/phyg/train.py`，因此不会自动启动六组正式训练。
+
+本增补阶段最终状态：
+
+```text
+official_test_participation=NONE
+official_weight_loaded_for_strict_check=YES
+official_weight_used_for_formal_training=NO
+development_train_read_for_resume_test=YES
+official_test_or_eval_read=NO
+formal_training_started=NO
+cuda_exact_resume_on_target_4090=PENDING
+benchmark_on_target_4090=PENDING
+```

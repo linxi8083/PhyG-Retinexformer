@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = Path("C:/Users/hxy/Desktop/PhyG-PEFT")
 
 
 def sha256(path):
@@ -42,19 +41,20 @@ def main():
         for path in (ROOT / "basicsr/data").rglob("*") if path.is_file()
     }
     require(tracked == local and len(local) == 25, "repository incomplete")
-    pairs = [
-        (SOURCE / "phyg_peft/physical_degradation.py",
-         ROOT / "phyg/physical_degradation.py"),
-        (SOURCE / "phyg_peft/dataset_wrappers.py",
-         ROOT / "phyg/development_dataset.py"),
-        (SOURCE / "phyg_peft/metrics.py", ROOT / "phyg/metrics.py"),
-        (SOURCE / "protocols/lolv2_synthetic_dev_split_seed20260726.txt",
-         ROOT / "configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.txt"),
-    ]
-    for source, target in pairs:
-        require(source.read_bytes() == target.read_bytes(),
-                f"exact copy differs: {target}")
-    manifest = pairs[-1][1].read_text(encoding="utf-8").splitlines()
+    records = {}
+    sha_manifest = ROOT / "configs/phyg/protocols/source_sha256.txt"
+    for line in sha_manifest.read_text(encoding="utf-8").splitlines():
+        digest, relative = line.split(None, 1)
+        records[relative.strip()] = digest
+    require(len(records) == 4, "protocol SHA manifest must contain four files")
+    for relative, expected in records.items():
+        target = ROOT / relative
+        require(target.is_file(), f"protocol file missing: {relative}")
+        require(sha256(target) == expected, f"protocol SHA differs: {relative}")
+    split_path = ROOT / (
+        "configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.txt"
+    )
+    manifest = split_path.read_text(encoding="utf-8").splitlines()
     train_index = manifest.index("[train]")
     validation_index = manifest.index("[validation]")
     train = manifest[train_index + 1:validation_index]
@@ -65,7 +65,7 @@ def main():
     require(hashlib.sha256(canonical.encode()).hexdigest() ==
             "e3e73abce5405d7fa4cbb7d1f16470dc924abf97c77208ba049da1613d0a944d",
             "canonical split hash")
-    require(sha256(pairs[-1][1]) ==
+    require(sha256(split_path) ==
             "f80b8d5cebd3b8f6529b0670e91037320bf939dba6f16d8a5402861465f543d6",
             "raw split hash")
     base = (ROOT / "configs/phyg/base_seed1234.yml").read_text(encoding="utf-8")
@@ -83,7 +83,7 @@ def main():
     require(len(arms) == 7, "expected base plus six train-arm configs")
     print("PASS: frozen refs and forbidden-file integrity")
     print("PASS: 25 official basicsr/data files are tracked")
-    print("PASS: four exact source copies")
+    print("PASS: four repository protocol SHA-256 records")
     print("PASS: frozen split 810/90, disjoint, raw/canonical hashes")
     print("PASS: shared base budget/init literals and six arm configs")
     print("official_test_participation=NONE")

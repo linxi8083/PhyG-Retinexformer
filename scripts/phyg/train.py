@@ -24,6 +24,7 @@ from phyg.development_dataset import (
     load_frozen_manifest,
 )
 from phyg.gamma_replay import GammaReplay
+from phyg.initialization import load_strict_model_only
 from phyg.metrics import AuthorValidationMetrics
 from phyg.physical_degradation import PhysicalBatchAugmenter
 from phyg.protocol import validate_protocol
@@ -44,6 +45,19 @@ class OrderedSampler(Sampler):
 
     def __len__(self):
         return len(self.indices)
+
+
+def isolated_loader_iterator(dataset, *, batch_size, sampler, drop_last,
+                             iteration_generator):
+    """Create an iterator without advancing global or persistent Torch RNG."""
+    state = iteration_generator.get_state()
+    loader = DataLoader(
+        dataset, batch_size=batch_size, num_workers=0, sampler=sampler,
+        drop_last=drop_last, generator=iteration_generator,
+    )
+    iterator = iter(loader)
+    iteration_generator.set_state(state)
+    return iterator
 
 
 def parse_args():
@@ -73,16 +87,6 @@ def build_development(config):
     train = DevelopmentPairDataset(root, sections["train"], config["crop_size"])
     validation = DevelopmentPairDataset(root, sections["validation"], None)
     return train, validation, raw_hash, canonical_hash
-
-
-def load_official_initialization(model, path, device):
-    path = Path(path)
-    digest = sha256_file(path)
-    checkpoint = torch.load(path, map_location=device, weights_only=True)
-    if set(checkpoint) != {"params"}:
-        raise ValueError("official initialization must contain only params")
-    model.load_state_dict(checkpoint["params"], strict=True)
-    return digest
 
 
 def make_replay(config, device):
@@ -134,7 +138,12 @@ def better(candidate, incumbent):
 def validate_development(model, dataset, device, metrics):
     model.eval()
     totals = {"psnr": 0.0, "ssim": 0.0, "lpips": 0.0}
-    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    iteration_generator = torch.Generator().manual_seed(0)
+    loader = isolated_loader_iterator(
+        dataset, batch_size=1,
+        sampler=OrderedSampler(range(len(dataset))), drop_last=False,
+        iteration_generator=iteration_generator,
+    )
     for low, gt, _ in loader:
         output = model(low.to(device)).clamp(0, 1)
         values = metrics.evaluate_tensor_pair(output, gt.to(device))
@@ -157,10 +166,11 @@ def main():
     model = define_network(dict(config["network"])).to(device)
     init_hash = sha256_file(config["initialization"])
     if not args.resume:
-        loaded_hash = load_official_initialization(
-            model, config["initialization"], device
+        initialization = load_strict_model_only(
+            model, config["initialization"],
+            config["initialization_sha256"], device,
         )
-        if loaded_hash != init_hash:
+        if initialization["sha256"] != init_hash:
             raise RuntimeError("initialization changed while loading")
     optimizer = torch.optim.Adam(
         model.parameters(), lr=config["optimizer"]["lr"],
@@ -175,10 +185,12 @@ def main():
         "cuda", enabled=config["amp"] and device.type == "cuda"
     )
     loader_generator = torch.Generator().manual_seed(config["seed"])
+    iteration_generator = torch.Generator().manual_seed(config["seed"] + 1)
     replay = make_replay(config, device)
     context = {
         "model": model, "optimizer": optimizer, "scheduler": scheduler,
         "amp_scaler": amp_scaler, "loader_generator": loader_generator,
+        "iteration_generator": iteration_generator,
         "replay": replay, "config": config,
         "config_sha256": config["_config_sha256"],
         "split_raw_sha256": split_raw,
@@ -211,9 +223,10 @@ def main():
         usable = config["steps_per_epoch"] * config["batch_size"]
         order = context["epoch_order"][:usable]
         start = context["batch_in_epoch"] * config["batch_size"]
-        loader = DataLoader(
-            train_set, batch_size=config["batch_size"], num_workers=0,
+        loader = isolated_loader_iterator(
+            train_set, batch_size=config["batch_size"],
             sampler=OrderedSampler(order[start:]), drop_last=True,
+            iteration_generator=iteration_generator,
         )
         model.train()
         for low, gt, _ in loader:

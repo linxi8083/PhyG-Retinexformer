@@ -6,6 +6,7 @@ split_manifest: configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.tx
 split_raw_sha256: f80b8d5cebd3b8f6529b0670e91037320bf939dba6f16d8a5402861465f543d6
 split_canonical_sha256: e3e73abce5405d7fa4cbb7d1f16470dc924abf97c77208ba049da1613d0a944d
 initialization: pretrained_weights/LOL_v2_synthetic.pth
+initialization_sha256: 2f793853c6b1ba0b4a3ff12b7b10f0f2c851eaefda1006437eb3f35229838c4a
 initialization_load: strict_model_only
 network:
   type: RetinexFormer

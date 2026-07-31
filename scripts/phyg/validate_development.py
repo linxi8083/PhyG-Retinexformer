@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from phyg.checkpoint import trusted_torch_load
+from phyg.initialization import load_strict_model_only
 from phyg.provenance import assert_development_root, load_config
 from scripts.phyg.train import (
     build_development,
-    load_official_initialization,
     validate_development,
 )
 from basicsr.models.archs import define_network
@@ -35,7 +35,10 @@ def main():
     device = torch.device(args.device)
     model = define_network(dict(config["network"])).to(device)
     if args.official_initialization:
-        load_official_initialization(model, config["initialization"], device)
+        load_strict_model_only(
+            model, config["initialization"],
+            config["initialization_sha256"], device,
+        )
     else:
         state = trusted_torch_load(args.checkpoint, device)
         if state["official_test_participation"] != "NONE":

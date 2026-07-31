@@ -15,9 +15,12 @@ sys.path.insert(0, str(ROOT))
 from phyg.gamma_replay import GammaReplay
 from phyg.physical_degradation import PhysicalBatchAugmenter
 from phyg.protocol import validate_protocol
-from phyg.provenance import assert_development_root, load_config, sha256_file
-
-SOURCE = Path("C:/Users/hxy/Desktop/PhyG-PEFT")
+from phyg.provenance import (
+    assert_development_root,
+    load_config,
+    sha256_file,
+    verify_sha256_manifest,
+)
 
 
 def require(condition, message):
@@ -59,18 +62,10 @@ def repository_completeness():
 
 
 def source_equivalence():
-    pairs = [
-        (SOURCE / "phyg_peft/physical_degradation.py",
-         ROOT / "phyg/physical_degradation.py"),
-        (SOURCE / "phyg_peft/dataset_wrappers.py",
-         ROOT / "phyg/development_dataset.py"),
-        (SOURCE / "phyg_peft/metrics.py", ROOT / "phyg/metrics.py"),
-        (SOURCE / "protocols/lolv2_synthetic_dev_split_seed20260726.txt",
-         ROOT / "configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.txt"),
-    ]
-    for source, target in pairs:
-        require(source.read_bytes() == target.read_bytes(),
-                f"source copy differs: {target}")
+    records = verify_sha256_manifest(
+        ROOT, ROOT / "configs/phyg/protocols/source_sha256.txt"
+    )
+    require(len(records) == 4, "protocol SHA-256 manifest must contain four files")
 
 
 def split_and_guard(config):
@@ -142,7 +137,7 @@ def main():
     replay_equivalence(config)
     print("PASS: author integrity")
     print("PASS: repository completeness")
-    print("PASS: exact source copies and Physical/Gamma CPU equivalence")
+    print("PASS: repository protocol SHA-256 and Physical/Gamma CPU equivalence")
     print("PASS: split count/nesting/hashes and Test/Eval path guard")
     print("official_test_participation=NONE")
 

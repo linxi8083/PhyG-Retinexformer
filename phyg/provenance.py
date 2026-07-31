@@ -17,6 +17,32 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def load_sha256_manifest(path):
+    records = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        digest, relative = line.split(None, 1)
+        records[relative.strip()] = digest.lower()
+    return records
+
+
+def verify_sha256_manifest(root, manifest):
+    root = Path(root)
+    records = load_sha256_manifest(manifest)
+    for relative, expected in records.items():
+        target = root / relative
+        if not target.is_file():
+            raise FileNotFoundError(f"SHA-256 target missing: {relative}")
+        actual = sha256_file(target)
+        if actual != expected:
+            raise ValueError(
+                f"SHA-256 mismatch for {relative}: {actual} != {expected}"
+            )
+    return records
+
+
 def canonical_config_bytes(config):
     return json.dumps(
         config, sort_keys=True, separators=(",", ":"), ensure_ascii=False

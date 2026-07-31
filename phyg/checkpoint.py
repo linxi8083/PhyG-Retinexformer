@@ -12,7 +12,8 @@ REQUIRED_FIELDS = {
     "model", "optimizer", "scheduler", "amp_scaler", "epoch",
     "batch_in_epoch", "global_step", "epoch_order", "sampler_position",
     "python_rng", "numpy_rng", "torch_cpu_rng", "torch_cuda_rng",
-    "dataloader_generator", "augmentation_rng", "replay_rng",
+    "dataloader_generator", "dataloader_iteration_generator",
+    "augmentation_rng", "replay_rng",
     "physical_noise_generator", "config", "config_sha256",
     "split_raw_sha256", "split_canonical_sha256",
     "initialization_checkpoint_sha256", "git_commit", "best_metric",
@@ -62,6 +63,8 @@ def build_checkpoint(context):
         "sampler_position": context["batch_in_epoch"] * context["config"]["batch_size"],
         **rng,
         "dataloader_generator": context["loader_generator"].get_state(),
+        "dataloader_iteration_generator":
+            context["iteration_generator"].get_state(),
         "augmentation_rng": rng["python_rng"],
         "replay_rng": replay_state,
         "physical_noise_generator": physical_noise,
@@ -117,6 +120,9 @@ def restore_checkpoint(path, context, map_location="cpu"):
         context["amp_scaler"].load_state_dict(state["amp_scaler"])
     restore_global_rng(state)
     context["loader_generator"].set_state(state["dataloader_generator"])
+    context["iteration_generator"].set_state(
+        state["dataloader_iteration_generator"]
+    )
     if context.get("replay") is not None:
         context["replay"].load_state_dict(state["replay_rng"])
     for key in (

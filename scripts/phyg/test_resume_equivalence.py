@@ -35,6 +35,7 @@ def make_context(seed=1234):
         "model": model, "optimizer": optimizer, "scheduler": scheduler,
         "amp_scaler": None, "loader_generator":
             torch.Generator().manual_seed(seed),
+        "iteration_generator": torch.Generator().manual_seed(seed + 1),
         "replay": GammaReplay(seed), "config": config,
         "config_sha256": config_sha256(config),
         "split_raw_sha256": "tiny-no-data-raw",
