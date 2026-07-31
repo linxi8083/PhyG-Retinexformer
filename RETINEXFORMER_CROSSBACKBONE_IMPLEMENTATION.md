@@ -477,7 +477,7 @@ official_weight_used_for_formal_training=NO
 development_train_read_for_resume_test=YES
 official_test_or_eval_read=NO
 formal_training_started=NO
-cuda_exact_resume_on_target_4090=PENDING
+cuda_exact_resume_on_target_4090=PASS
 benchmark_on_target_4090=PENDING
 ```
 
@@ -552,3 +552,34 @@ CUBLAS_WORKSPACE_CONFIG=:4096:8
 `test_real_stack_resume.py` 现已在导入 PyTorch 前使用 `os.environ.setdefault` 设置该值；
 `run_seed1234.sh` 也在启动任何 Python 进程前显式 `export`。这只影响确定性测试的
 cuBLAS workspace，不修改网络、优化器、退化协议或正式训练配置。
+
+### 10.2 目标 RTX 4090 CUDA 断点等价结果
+
+已在目标 Ubuntu RTX 4090 服务器执行：
+
+```text
+python scripts/phyg/test_real_stack_resume.py --steps 4 --interrupt-step 2
+```
+
+服务器返回结果：
+
+```text
+Gamma Replay: continuous 4 steps == 2 steps + CUDA restore + 2 steps: PASS
+Physical Full: continuous 4 steps == 2 steps + CUDA restore + 2 steps: PASS
+global_step=4
+```
+
+测试覆盖并通过以下断言：
+
+- 完整 checkpoint 通过 `map_location=cuda` 加载后，CPU RNG 恢复成功；
+- 所有 CUDA RNG state 恢复成功；
+- DataLoader epoch-order generator 与 iterator generator 均恢复成功；
+- Physical noise generator 恢复成功；
+- Gamma Replay 和 Physical Full 的 model、optimizer、scheduler、global_step
+  以及下一批退化参数，在连续 4 步与 2 步 + 恢复 + 2 步之间逐位一致；
+- 使用真实 RetinexFormer、实际 810 对 Development Train、crop/flip 和 Mixup；
+- `official_test_participation=NONE`。
+
+运行中的 `Can't initialize NVML` 不影响本次 CUDA 计算和等价断言；`TypedStorage is
+deprecated` 是 PyTorch 依赖路径的弃用警告。两者均未造成 NaN、异常退出或断言失败。
+本轮未运行 benchmark，`benchmark_on_target_4090=PENDING` 保持不变。
