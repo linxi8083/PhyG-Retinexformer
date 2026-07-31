@@ -1,0 +1,18 @@
+{
+  "protocol": "retinexformer_frozen_robustness_v1",
+  "seed": 1234,
+  "official_test_participation": "NONE",
+  "data_root": "datasets/LOLv2/Synthetic/Train",
+  "split_manifest": "configs/phyg/protocols/lolv2_synthetic_dev_split_seed20260726.txt",
+  "split_raw_sha256": "f80b8d5cebd3b8f6529b0670e91037320bf939dba6f16d8a5402861465f543d6",
+  "split_canonical_sha256": "e3e73abce5405d7fa4cbb7d1f16470dc924abf97c77208ba049da1613d0a944d",
+  "network": {"type": "RetinexFormer", "in_channels": 3, "out_channels": 3, "n_feat": 40, "stage": 1, "num_blocks": [1, 2, 2]},
+  "checkpoints": {
+    "identity": {"path": "outputs/retinexformer_identity_seed1234/best_validation.pth", "sha256": "c6a5a92ef7cae095b2c455a5c8195e051ed2768a5c32b9e6bb8ec5f50001a89d"},
+    "gamma_replay": {"path": "outputs/retinexformer_gamma_replay_seed1234/best_validation.pth", "sha256": "7fe13761f44b821ec23854006f00edd98122197f19e81e29eccdf5e26251a35f"},
+    "physical_exposure": {"path": "outputs/retinexformer_physical_exposure_seed1234/best_validation.pth", "sha256": "f4057de86eef80ff8e304788cb3806a2aea6774b13377c49c6805f9e7ceab8b8"},
+    "physical_exposure_noise": {"path": "outputs/retinexformer_physical_exposure_noise_seed1234/best_validation.pth", "sha256": "f39fece9e21e705d573f1583b8e3290f30e74047f7f7a616a7c946a8474de813"},
+    "physical_exposure_color": {"path": "outputs/retinexformer_physical_exposure_color_seed1234/best_validation.pth", "sha256": "d5c3f7e040aa0b8e3251a40fc2681f41ecc598b3dcb35c3332ff18ff958a14b2"},
+    "physical_full": {"path": "outputs/retinexformer_physical_full_seed1234/best_validation.pth", "sha256": "16016ba60564b64e1a28e4fa5c08a7866971857dce13f538730cfa9db3503f9f"}
+  }
+}
