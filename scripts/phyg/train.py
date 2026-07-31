@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from basicsr.models.archs import define_network
 from basicsr.models.losses.losses import L1Loss
+from phyg.amp_compat import autocast_context, make_grad_scaler
 from phyg.checkpoint import restore_checkpoint, save_checkpoint
 from phyg.development_dataset import (
     DevelopmentPairDataset,
@@ -188,9 +189,7 @@ def main():
         eta_min=config["scheduler"]["eta_min"],
     )
     criterion = L1Loss(loss_weight=1.0, reduction="mean").to(device)
-    amp_scaler = torch.amp.GradScaler(
-        "cuda", enabled=config["amp"] and device.type == "cuda"
-    )
+    amp_scaler = make_grad_scaler(device, config["amp"])
     loader_generator = torch.Generator().manual_seed(config["seed"])
     iteration_generator = torch.Generator().manual_seed(config["seed"] + 1)
     replay = make_replay(config, device)
@@ -245,10 +244,7 @@ def main():
             low, gt = apply_shared_mixup(low, gt, config, device)
             low, _ = apply_replay(config["replay"]["type"], replay, low)
             optimizer.zero_grad(set_to_none=True)
-            with torch.amp.autocast(
-                device_type=device.type,
-                enabled=config["amp"] and device.type == "cuda",
-            ):
+            with autocast_context(device, config["amp"]):
                 loss = criterion(model(low), gt)
             amp_scaler.scale(loss).backward()
             amp_scaler.unscale_(optimizer)
